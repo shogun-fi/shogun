@@ -8,9 +8,9 @@ use crate::msg::ExecuteMsg;
 /// CwTemplateContract is a wrapper around Addr that provides a lot of helpers
 /// for working with this.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
-pub struct CwTemplateContract(pub Addr);
+pub struct MockContract(pub Addr);
 
-impl CwTemplateContract {
+impl MockContract {
     pub fn addr(&self) -> Addr {
         self.0.clone()
     }

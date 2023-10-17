@@ -1,6 +1,6 @@
 use cosmwasm_schema::write_api;
 
-use t::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use shogun_neutron::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 
 fn main() {
     write_api! {
