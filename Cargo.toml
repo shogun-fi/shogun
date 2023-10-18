@@ -1,5 +1,5 @@
 [package]
-name = "shogun-neutron"
+name = "shogun"
 version = "0.1.0"
 authors = ["Marcus Engvall <marcus@engvall.email>"]
 edition = "2021"
