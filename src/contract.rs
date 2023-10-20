@@ -35,7 +35,7 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
     ExecuteMsg::Prepare { assets } => prepare(deps, env, info, assets),
-    ExecuteMsg::Deposit { quote } => deposit(deps, env, info, quote),
+    ExecuteMsg::Supply { quote } => deposit(deps, env, info, quote),
     ExecuteMsg::Settle {  } => todo!()
     } 
 }

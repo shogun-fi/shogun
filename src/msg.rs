@@ -11,7 +11,7 @@ pub enum ExecuteMsg {
     Prepare {
         assets: Vec<PairConfiguration>,
     },
-    Deposit {
+    Supply {
         quote: String
     },
     Settle {
