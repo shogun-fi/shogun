@@ -1,9 +1,8 @@
 use std::cmp;
 
-use astroport::cosmwasm_ext::IntegerToDecimal;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Coin, Decimal, WasmMsg, CosmosMsg, Uint128, BankMsg, Decimal256, Fraction, coin};
+use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, WasmMsg, CosmosMsg, Uint128, BankMsg};
 // use cw2::set_contract_version;
 
 use crate::error::ContractError;
@@ -36,7 +35,7 @@ pub fn execute(
     match msg {
     ExecuteMsg::Prepare { assets } => prepare(deps, env, info, assets),
     ExecuteMsg::Supply { quote } => deposit(deps, env, info, quote),
-    ExecuteMsg::Settle {  } => todo!()
+    ExecuteMsg::Settle {  } => settle(deps, env, info)
     } 
 }
 
@@ -143,7 +142,12 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String) -> Res
 }
 
 fn settle(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
-    Ok(Response::default())
+    let messages = match SETTLEMENT_MESSAGES.may_load(deps.storage)? {
+        Some(msgs) => msgs,
+        None => todo!(),
+    };
+
+    Ok(Response::default().add_messages(messages))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
