@@ -7,8 +7,8 @@
   # https://devenv.sh/packages/
   packages = [
     pkgs.git
-    pkgs.mktemp
     pkgs.darwin.apple_sdk.frameworks.Security
+    pkgs.mktemp
   ];
 
   languages.rust = {
