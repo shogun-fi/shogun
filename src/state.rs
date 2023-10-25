@@ -4,6 +4,7 @@ use cw_storage_plus::{Map, Item};
 
 pub const PAIRS: Map<(String, String), PairConfiguration> = Map::new("pairs");
 pub const SETTLEMENT_MESSAGES: Item<Vec<CosmosMsg>> = Item::new("settlement_messages");
+pub const ASTROPORT_ADDRESS: Item<Addr> = Item::new("astroport_address");
 
 #[cw_serde]
 pub enum Surplus {
@@ -21,7 +22,7 @@ pub struct PairConfiguration {
     pub quote: String,
     pub quote_supply: Uint128,
 
-    pub surplus: Surplus,
+    pub surplus: Option<Surplus>,
 
     pub exchange_rate: Decimal,
 

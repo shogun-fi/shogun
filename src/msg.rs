@@ -1,10 +1,12 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Uint128, Timestamp, Decimal};
+use cosmwasm_std::{Decimal, Addr};
 
 use crate::state::PairConfiguration;
 
 #[cw_serde]
-pub struct InstantiateMsg {}
+pub struct InstantiateMsg {
+    pub astroport_address: Addr
+}
 
 #[cw_serde]
 pub enum ExecuteMsg {

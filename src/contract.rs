@@ -1,13 +1,14 @@
 use std::cmp;
 
+use astroport::asset::AssetInfo;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, WasmMsg, CosmosMsg, Uint128, BankMsg, Decimal};
+use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, WasmMsg, CosmosMsg, Uint128, BankMsg, Decimal, to_binary};
 // use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{PairConfiguration, Surplus, SETTLEMENT_MESSAGES, PAIRS};
+use crate::state::{PairConfiguration, Surplus, SETTLEMENT_MESSAGES, PAIRS, ASTROPORT_ADDRESS};
 
 /*
 // version info for migration info
@@ -17,11 +18,12 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    _deps: DepsMut,
-    _env: Env,
-    _info: MessageInfo,
-    _msg: InstantiateMsg,
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
+    ASTROPORT_ADDRESS.save(deps.storage, &msg.astroport_address)?;
     Ok(Response::default())
 }
 
@@ -82,15 +84,24 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String, slippa
 
     let mut settlement_messages: Vec<CosmosMsg> = Vec::new();
 
-    let routed: Uint128 = Uint128::new(0);
+    let mut routed: Uint128 = Uint128::new(0);
+
+    let dex_address = ASTROPORT_ADDRESS.load(deps.storage)?;
     match pair.surplus {
         Some(Surplus::Base(routing_proportion)) if supply.denom == pair.base => {
             let routing_amount = supply.amount.multiply_ratio(routing_proportion.0, routing_proportion.1);
-            let funds_to_route = cosmwasm_std::coins(routing_amount.into(), supply.denom);
+            let funds_to_route = cosmwasm_std::coins(routing_amount.into(), supply.denom.clone());
 
             let routing_msg = WasmMsg::Execute {
-                contract_addr: todo!(),
-                msg: todo!(),
+                contract_addr: dex_address.into_string(),
+                msg: to_binary(&astroport::pair::ExecuteMsg::Swap {
+                    offer_asset: astroport::asset::Asset {
+                        info: AssetInfo::NativeToken { denom: supply.denom.clone() }, amount: routing_amount },
+                    ask_asset_info: Some(AssetInfo::NativeToken { denom: quote.clone() }),
+                    belief_price: None,
+                    max_spread: Some(slippage_tolerance),
+                    to: Some(user_address.clone().into())
+                })?,
                 funds: funds_to_route
             };
 
@@ -101,11 +112,18 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String, slippa
 
         Some(Surplus::Quote(routing_proportion)) if supply.denom == pair.quote => {
             let routing_amount = supply.amount.multiply_ratio(routing_proportion.0, routing_proportion.1);
-            let funds_to_route = cosmwasm_std::coins(routing_amount.into(), supply.denom);
+            let funds_to_route = cosmwasm_std::coins(routing_amount.into(), supply.denom.clone());
 
             let routing_msg = WasmMsg::Execute {
-                contract_addr: todo!(),
-                msg: todo!(),
+                contract_addr: dex_address.into_string(),
+                msg: to_binary(&astroport::pair::ExecuteMsg::Swap {
+                    offer_asset: astroport::asset::Asset {
+                        info: AssetInfo::NativeToken { denom: supply.denom.clone() }, amount: routing_amount },
+                    ask_asset_info: Some(AssetInfo::NativeToken { denom: quote.clone() }),
+                    belief_price: None,
+                    max_spread: Some(slippage_tolerance),
+                    to: Some(user_address.clone().into())
+                })?,
                 funds: funds_to_route
             };
 
@@ -120,9 +138,8 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String, slippa
     let exchange_value = remainder.mul_ceil(pair.exchange_rate);
 
     let settlement_message = BankMsg::Send {
-        to_address: user_address.into(),
+        to_address: user_address.clone().into(),
         amount: cosmwasm_std::coins(exchange_value.into(), supply.denom)
-
     };
     
     settlement_messages.push(settlement_message.into());
