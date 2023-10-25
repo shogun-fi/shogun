@@ -12,7 +12,8 @@ pub enum ExecuteMsg {
         assets: Vec<PairConfiguration>,
     },
     Supply {
-        quote: String
+        quote: String,
+        slippage_tolerance: Decimal
     },
     Settle {
 

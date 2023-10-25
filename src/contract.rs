@@ -2,7 +2,7 @@ use std::cmp;
 
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, WasmMsg, CosmosMsg, Uint128, BankMsg};
+use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, WasmMsg, CosmosMsg, Uint128, BankMsg, Decimal};
 // use cw2::set_contract_version;
 
 use crate::error::ContractError;
@@ -22,7 +22,7 @@ pub fn instantiate(
     _info: MessageInfo,
     _msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    unimplemented!()
+    Ok(Response::default())
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -34,7 +34,7 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
     ExecuteMsg::Prepare { assets } => prepare(deps, env, info, assets),
-    ExecuteMsg::Supply { quote } => deposit(deps, env, info, quote),
+    ExecuteMsg::Supply { quote, slippage_tolerance } => deposit(deps, env, info, quote, slippage_tolerance),
     ExecuteMsg::Settle {  } => settle(deps, env, info)
     } 
 }
@@ -45,15 +45,15 @@ fn prepare(deps: DepsMut, env: Env, info: MessageInfo, assets: Vec<PairConfigura
         let base_demand = pair.quote_supply.div_ceil(pair.exchange_rate);
 
         if pair.base_supply == base_demand {
-            pair.surplus = Surplus::Match;
+            pair.surplus = Some(Surplus::Match);
         } else if pair.base_supply > base_demand {
             let surplus = pair.base_supply - base_demand;
             let proportion_fraction = (surplus, pair.base_supply.clone());
-            pair.surplus = Surplus::Base(proportion_fraction);
+            pair.surplus = Some(Surplus::Base(proportion_fraction));
         } else {
             let surplus = base_demand - pair.quote_supply;
             let proportion_fraction = (surplus, pair.quote_supply.clone());
-            pair.surplus = Surplus::Base(proportion_fraction);
+            pair.surplus = Some(Surplus::Base(proportion_fraction));
         }
 
         PAIRS.save(deps.storage, (pair.base.clone(), pair.quote.clone()), &pair)?;
@@ -65,7 +65,7 @@ fn prepare(deps: DepsMut, env: Env, info: MessageInfo, assets: Vec<PairConfigura
 /// Submits a signed order to a pending batch settlement.
 /// 
 /// On processing of an order submission, the bank module has already transferred the funds that a user wishes to offer to the custody of the execution contract. It is through this fund transfer that the user's offer is inferred (amount and denomination).
-fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String) -> Result<Response, ContractError> {
+fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String, slippage_tolerance: Decimal) -> Result<Response, ContractError> {
     let user_address = info.sender;
     let supply = match info.funds.get(0) {
         Some(supply) => supply.clone(),
@@ -84,7 +84,7 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String) -> Res
 
     let routed: Uint128 = Uint128::new(0);
     match pair.surplus {
-        Surplus::Base(routing_proportion) if supply.denom == pair.base => {
+        Some(Surplus::Base(routing_proportion)) if supply.denom == pair.base => {
             let routing_amount = supply.amount.multiply_ratio(routing_proportion.0, routing_proportion.1);
             let funds_to_route = cosmwasm_std::coins(routing_amount.into(), supply.denom);
 
@@ -99,7 +99,7 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String) -> Res
             routed = routed + routing_amount;
         },
 
-        Surplus::Quote(routing_proportion) if supply.denom == pair.quote => {
+        Some(Surplus::Quote(routing_proportion)) if supply.denom == pair.quote => {
             let routing_amount = supply.amount.multiply_ratio(routing_proportion.0, routing_proportion.1);
             let funds_to_route = cosmwasm_std::coins(routing_amount.into(), supply.denom);
 
