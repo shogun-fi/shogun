@@ -24,7 +24,7 @@ pub struct PairConfiguration {
 
     pub surplus: Option<Surplus>,
 
-    pub exchange_rate: Decimal,
+    pub exchange_rate: Uint128,
 
     // IDEA: Add amount of orders on each side of the pair for contractual guarantees and security?
 }

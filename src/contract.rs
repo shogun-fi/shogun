@@ -35,16 +35,16 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-    ExecuteMsg::Prepare { assets } => prepare(deps, env, info, assets),
-    ExecuteMsg::Supply { quote, slippage_tolerance } => deposit(deps, env, info, quote, slippage_tolerance),
-    ExecuteMsg::Settle {  } => settle(deps, env, info)
+        ExecuteMsg::Prepare { assets } => prepare(deps, env, info, assets),
+        ExecuteMsg::Supply { quote, slippage_tolerance } => deposit(deps, env, info, quote, slippage_tolerance),
+        ExecuteMsg::Settle {  } => settle(deps, env, info)
     } 
 }
 
 fn prepare(deps: DepsMut, env: Env, info: MessageInfo, assets: Vec<PairConfiguration>) ->Result<Response, ContractError> {
 
     for mut pair in assets {
-        let base_demand = pair.quote_supply.div_ceil(pair.exchange_rate);
+        let base_demand = pair.quote_supply / pair.exchange_rate;
 
         if pair.base_supply == base_demand {
             pair.surplus = Some(Surplus::Match);
@@ -135,7 +135,7 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String, slippa
     }
 
     let remainder = supply.amount - routed;
-    let exchange_value = remainder.mul_ceil(pair.exchange_rate);
+    let exchange_value = remainder * pair.exchange_rate;
 
     let settlement_message = BankMsg::Send {
         to_address: user_address.clone().into(),
