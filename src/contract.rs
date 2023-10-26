@@ -44,7 +44,7 @@ pub fn execute(
 fn prepare(deps: DepsMut, env: Env, info: MessageInfo, assets: Vec<PairConfiguration>) ->Result<Response, ContractError> {
 
     for mut pair in assets {
-        let base_demand = pair.quote.amount.div_floor((1u128.into(), pair.exchange_rate));
+        let base_demand = pair.quote.amount / pair.exchange_rate;
 
         pair.surplus = match pair.base.amount.cmp(&base_demand) {
             Ordering::Equal => None,
@@ -62,6 +62,8 @@ fn prepare(deps: DepsMut, env: Env, info: MessageInfo, assets: Vec<PairConfigura
 
         PAIRS.save(deps.storage, (pair.base.denom.clone(), pair.quote.denom.clone()), &pair)?;
     }
+
+    SETTLEMENT_MESSAGES.save(deps.storage, &vec![])?;
 
     Ok(Response::default())
 }
@@ -114,10 +116,18 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String, slippa
 
         supply.amount -= user_residual;
     }
+    
+    let cow_matched = {
+        if supply.denom == pair.base.denom {
+            supply.amount * pair.exchange_rate
+        } else {
+            supply.amount / pair.exchange_rate
+        }
+    };
 
     settlement_messages.push(BankMsg::Send {
         to_address: user_address.clone().into(),
-        amount: coins((supply.amount * pair.exchange_rate).into(), buy_denom),
+        amount: coins(cow_matched.into(), buy_denom),
     }.into());
 
     SETTLEMENT_MESSAGES.update(deps.storage, |mut msgs| -> StdResult<_> {
@@ -138,7 +148,62 @@ pub fn query(_deps: Deps, _env: Env, _msg: QueryMsg) -> StdResult<Binary> {
     unimplemented!()
 }
 
+
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
 
+    use cosmwasm_std::{testing::{mock_dependencies, mock_info, mock_env}, Addr, coins, coin, Decimal};
+
+    use crate::{msg::InstantiateMsg, state::{PairConfiguration, SETTLEMENT_MESSAGES}};
+
+    #[test]
+    fn init() {
+        let mut deps = mock_dependencies();
+        let info = mock_info("creator", &coins(0, "token"));
+
+        let astroport_address = Addr::unchecked("astroport");
+        let msg = InstantiateMsg {astroport_address};
+
+        let _res = super::instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
+
+        // check if astroport msg is saved
+    }
+
+    #[test]
+    fn prepare() {
+        let mut deps = mock_dependencies();
+        let info = mock_info("creator", &coins(0, "token"));
+
+        let astroport_address = Addr::unchecked("astroport");
+        let msg = InstantiateMsg {astroport_address};
+
+        let _res = super::instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
+    }
+
+    #[test]
+    fn supply() {
+        let mut deps = mock_dependencies();
+        let owner_info = mock_info("creator", &coins(0, "token"));
+        let msg = InstantiateMsg {astroport_address: Addr::unchecked("astroport")};
+        let _res = super::instantiate(deps.as_mut(), mock_env(), owner_info.clone(), msg).unwrap();
+
+        let pair_configuration = PairConfiguration {
+            base: coin(500_000, "ETH"), 
+            quote: coin(100_000, "ATOM"), 
+            surplus: None,
+            exchange_rate: 2u128.into(), 
+        };
+
+        let _res = super::prepare(deps.as_mut(), mock_env(), owner_info, vec![pair_configuration]);
+
+        let info = mock_info("user_1", &coins(200_000, "ETH"));
+        let _res = super::deposit(deps.as_mut(), mock_env(), info, "ATOM".to_owned(), Decimal::from_str("0.04").unwrap());
+
+        let info = mock_info("user_2", &coins(300_000, "ETH"));
+        let _res = super::deposit(deps.as_mut(), mock_env(), info, "ATOM".to_owned(), Decimal::from_str("0.04").unwrap());
+
+        let info = mock_info("user_3", &coins(100_000, "ATOM"));
+        let _res = super::deposit(deps.as_mut(), mock_env(), info, "ETH".to_owned(), Decimal::from_str("0.04").unwrap());
+    }
 }
