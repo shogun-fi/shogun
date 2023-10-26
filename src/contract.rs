@@ -1,9 +1,9 @@
-use std::cmp;
+use std::cmp::{self, Ordering};
 
 use astroport::asset::AssetInfo;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, WasmMsg, CosmosMsg, Uint128, BankMsg, Decimal, to_binary};
+use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, WasmMsg, CosmosMsg, Uint128, BankMsg, Decimal, to_binary, coin, coins, Coin};
 // use cw2::set_contract_version;
 
 use crate::error::ContractError;
@@ -44,126 +44,92 @@ pub fn execute(
 fn prepare(deps: DepsMut, env: Env, info: MessageInfo, assets: Vec<PairConfiguration>) ->Result<Response, ContractError> {
 
     for mut pair in assets {
-        let base_demand = pair.quote_supply / pair.exchange_rate;
+        let base_demand = pair.quote.amount.div_floor((1u128.into(), pair.exchange_rate));
 
-        if pair.base_supply == base_demand {
-            pair.surplus = Some(Surplus::Match);
-        } else if pair.base_supply > base_demand {
-            let surplus = pair.base_supply - base_demand;
-            let proportion_fraction = (surplus, pair.base_supply.clone());
-            pair.surplus = Some(Surplus::Base(proportion_fraction));
-        } else {
-            let surplus = base_demand - pair.quote_supply;
-            let proportion_fraction = (surplus, pair.quote_supply.clone());
-            pair.surplus = Some(Surplus::Base(proportion_fraction));
-        }
+        pair.surplus = match pair.base.amount.cmp(&base_demand) {
+            Ordering::Equal => None,
 
-        PAIRS.save(deps.storage, (pair.base.clone(), pair.quote.clone()), &pair)?;
+            Ordering::Greater => {
+                let surplus = pair.base.amount - base_demand;
+                Some(coin(surplus.into(), pair.base.denom.clone()))
+            },
+
+            Ordering::Less => {
+                let surplus = base_demand - pair.quote.amount;
+                Some(coin(surplus.into(), pair.quote.denom.clone()))
+            },
+        };
+
+        PAIRS.save(deps.storage, (pair.base.denom.clone(), pair.quote.denom.clone()), &pair)?;
     }
 
     Ok(Response::default())
 }
+
+// TODO: Convert asset IDs from strings to numbers
+// TODO: Clean up clones and borrowing
 
 /// Submits a signed order to a pending batch settlement.
 /// 
 /// On processing of an order submission, the bank module has already transferred the funds that a user wishes to offer to the custody of the execution contract. It is through this fund transfer that the user's offer is inferred (amount and denomination).
 fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String, slippage_tolerance: Decimal) -> Result<Response, ContractError> {
-    let user_address = info.sender;
-    let supply = match info.funds.get(0) {
+    let dex_address = ASTROPORT_ADDRESS.load(deps.storage)?;
+
+    let user_address = &info.sender;
+    let mut supply: Coin = match info.funds.get(0) {
         Some(supply) => supply.clone(),
         None => return Err(ContractError::InvalidOrder)
     };
 
-    let base = cmp::max(&supply.denom, &buy_denom);
-    let quote = cmp::max(&supply.denom, &buy_denom);
-
-    let pair = match PAIRS.may_load(deps.storage, (base.clone(), quote.clone()))? {
+    let pair = match PAIRS.may_load(deps.storage, (cmp::max(&supply.denom, &buy_denom).clone(), cmp::min(&supply.denom, &buy_denom).clone()))? {
         Some(pair) => pair,
-        None => todo!(),
+        None => return Err(ContractError::InvalidOrder),
     };
 
     let mut settlement_messages: Vec<CosmosMsg> = Vec::new();
 
-    let mut routed: Uint128 = Uint128::new(0);
+    if let (Some(surplus), true) = (pair.surplus.clone(), pair.surplus.is_some_and(|surplus| surplus.denom == supply.denom)) { 
+        let user_residual = {
+            if supply.denom == pair.base.denom {
+                supply.amount.multiply_ratio(surplus.amount, pair.base.amount)
+            } else {
+                supply.amount.multiply_ratio(surplus.amount, pair.quote.amount)
+            }
+        };
 
-    let dex_address = ASTROPORT_ADDRESS.load(deps.storage)?;
-    match pair.surplus {
-        Some(Surplus::Base(routing_proportion)) if supply.denom == pair.base => {
-            let routing_amount = supply.amount.multiply_ratio(routing_proportion.0, routing_proportion.1);
-            let funds_to_route = cosmwasm_std::coins(routing_amount.into(), supply.denom.clone());
+        settlement_messages.push(WasmMsg::Execute {
+            contract_addr: dex_address.into(),
+            msg: to_binary(&astroport::pair::ExecuteMsg::Swap {
+                offer_asset: astroport::asset::Asset {
+                    info: AssetInfo::NativeToken { denom: supply.denom.clone() },
+                    amount: user_residual,
+                },
+                ask_asset_info: Some(AssetInfo::NativeToken { denom: buy_denom.clone() }),
+                belief_price: None,
+                max_spread: slippage_tolerance.into(),
+                to: Some(user_address.into()),
+            })?,
+            funds: coins(user_residual.into(), supply.denom.clone())
+        }.into());
 
-            let routing_msg = WasmMsg::Execute {
-                contract_addr: dex_address.into_string(),
-                msg: to_binary(&astroport::pair::ExecuteMsg::Swap {
-                    offer_asset: astroport::asset::Asset {
-                        info: AssetInfo::NativeToken { denom: supply.denom.clone() }, amount: routing_amount },
-                    ask_asset_info: Some(AssetInfo::NativeToken { denom: quote.clone() }),
-                    belief_price: None,
-                    max_spread: Some(slippage_tolerance),
-                    to: Some(user_address.clone().into())
-                })?,
-                funds: funds_to_route
-            };
-
-            settlement_messages.push(routing_msg.into());
-
-            routed = routed + routing_amount;
-        },
-
-        Some(Surplus::Quote(routing_proportion)) if supply.denom == pair.quote => {
-            let routing_amount = supply.amount.multiply_ratio(routing_proportion.0, routing_proportion.1);
-            let funds_to_route = cosmwasm_std::coins(routing_amount.into(), supply.denom.clone());
-
-            let routing_msg = WasmMsg::Execute {
-                contract_addr: dex_address.into_string(),
-                msg: to_binary(&astroport::pair::ExecuteMsg::Swap {
-                    offer_asset: astroport::asset::Asset {
-                        info: AssetInfo::NativeToken { denom: supply.denom.clone() }, amount: routing_amount },
-                    ask_asset_info: Some(AssetInfo::NativeToken { denom: quote.clone() }),
-                    belief_price: None,
-                    max_spread: Some(slippage_tolerance),
-                    to: Some(user_address.clone().into())
-                })?,
-                funds: funds_to_route
-            };
-
-            settlement_messages.push(routing_msg.into());
-
-            routed = routed + routing_amount;
-        },
-        _ => {}
+        supply.amount -= user_residual;
     }
 
-    let remainder = supply.amount - routed;
-    let exchange_value = remainder * pair.exchange_rate;
-
-    let settlement_message = BankMsg::Send {
+    settlement_messages.push(BankMsg::Send {
         to_address: user_address.clone().into(),
-        amount: cosmwasm_std::coins(exchange_value.into(), supply.denom)
-    };
-    
-    settlement_messages.push(settlement_message.into());
+        amount: coins((supply.amount * pair.exchange_rate).into(), buy_denom),
+    }.into());
 
-    match SETTLEMENT_MESSAGES.may_load(deps.storage) {
-        Ok(data) => {
-            let mut msgs = data.unwrap_or_default();
-
-            msgs.append(&mut settlement_messages);
-            
-            SETTLEMENT_MESSAGES.save(deps.storage, &msgs)?;
-        },
-        Err(_) => todo!()
-    }
+    SETTLEMENT_MESSAGES.update(deps.storage, |mut msgs| -> StdResult<_> {
+        msgs.append(&mut settlement_messages);
+        Ok(msgs)
+    })?;
 
     Ok(Response::default())
 }
 
 fn settle(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
-    let messages = match SETTLEMENT_MESSAGES.may_load(deps.storage)? {
-        Some(msgs) => msgs,
-        None => todo!(),
-    };
-
+    let messages = SETTLEMENT_MESSAGES.load(deps.storage)?;
     Ok(Response::default().add_messages(messages))
 }
 
