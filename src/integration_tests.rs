@@ -34,11 +34,13 @@ mod tests {
         })
     }
 
-    fn proper_instantiate() -> (App, MockContract) {
+    fn proper_instantiate(astro_address: Addr) -> (App, MockContract) {
         let mut app = mock_app();
         let execution_contract_id = app.store_code(execution_contract());
 
-        let execution_instantiation = InstantiateMsg { };
+        let execution_instantiation = InstantiateMsg {
+            astroport_address: astro_address,
+        };
         let execution_contract_address = app
             .instantiate_contract(
                 execution_contract_id,
@@ -57,7 +59,7 @@ mod tests {
     }
 
     mod execution {
-        use std::str::FromStr;
+        use std::{str::FromStr, cmp};
 
         use cosmwasm_std::{Decimal, coin};
 
@@ -81,9 +83,12 @@ mod tests {
 
         #[test]
         fn complete_single_pair() {
-            let (mut app, execution_contract) = proper_instantiate();
+            let astroport_address = generate_random_address();
+            let (mut app, execution_contract) = proper_instantiate(astroport_address);
 
-            let price = Decimal::from_str("0.004217").unwrap();
+            let base = "ETH";
+            let quote = "ATOM";
+            let price: u128 = 250_000_000;
 
             // we use the smallest denomination of each coin, microatom for ATOM and wei for ETH
             let users: Vec<MockUser> = vec![
@@ -108,9 +113,9 @@ mod tests {
             }
 
             let pair_config = PairConfiguration {
-                base: "ATOM".into(),
+                base: "ETH".into(),
                 base_supply,
-                quote: "ETH".into(),
+                quote: "ATOM".into(),
                 surplus: None,
                 quote_supply,
                 exchange_rate: price,
