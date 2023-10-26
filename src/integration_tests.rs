@@ -2,25 +2,14 @@
 mod tests {
     use crate::helpers::{MockContract};
     use crate::msg::InstantiateMsg;
-    use cosmwasm_std::{Addr, Coin, Empty, Uint128};
+    use cosmwasm_std::{Addr, Coin, Empty, Uint128, Uint256};
     use cw_multi_test::{App, AppBuilder, Contract, ContractWrapper, Executor};
-
-    use self::mock_dex::MockDex;
 
     pub fn execution_contract() -> Box<dyn Contract<Empty>> {
         let contract = ContractWrapper::new(
             crate::contract::execute,
             crate::contract::instantiate,
             crate::contract::query,
-        );
-        Box::new(contract)
-    }
-
-    pub fn mock_dex() -> Box<dyn Contract<Empty>> {
-        let contract = ContractWrapper::new(
-            mock_dex::execute,
-            mock_dex::instantiate,
-            mock_dex::query,
         );
         Box::new(contract)
     }
@@ -45,13 +34,13 @@ mod tests {
         })
     }
 
-    fn proper_instantiate() -> (App, MockContract, MockDex, MockDex) {
+    fn proper_instantiate(astro_address: Addr) -> (App, MockContract) {
         let mut app = mock_app();
         let execution_contract_id = app.store_code(execution_contract());
-        let mock_dex_one_id = app.store_code(mock_dex());
-        let mock_dex_two_id = app.store_code(mock_dex());
 
-        let execution_instantiation = InstantiateMsg { };
+        let execution_instantiation = InstantiateMsg {
+            astroport_address: astro_address,
+        };
         let execution_contract_address = app
             .instantiate_contract(
                 execution_contract_id,
@@ -63,121 +52,89 @@ mod tests {
             )
             .unwrap();
 
-        let mock_dex_one_instantiation = mock_dex::InstantiateMsg {
-            bid_denom: todo!(),
-            ask_denom: todo!(),
-            price: todo!(),
-        };
-        let mock_dex_one_address = app
-            .instantiate_contract(
-                mock_dex_one_id,
-                Addr::unchecked(ADMIN),
-                &mock_dex_one_instantiation,
-                &[],
-                "test",
-                None,
-            )
-            .unwrap();
-        
-        let mock_dex_two_instantiation = mock_dex::InstantiateMsg {
-            bid_denom: todo!(),
-            ask_denom: todo!(),
-            price: todo!(),
-        };
-        let mock_dex_two_address = app
-            .instantiate_contract(
-                mock_dex_two_id,
-                Addr::unchecked(ADMIN),
-                &mock_dex_two_instantiation,
-                &[],
-                "test",
-                None,
-            )
-            .unwrap();
-
         let execution_contract = MockContract(execution_contract_address);
 
-        let mock_dex_one = MockDex(mock_dex_one_address);
-        let mock_dex_two= MockDex(mock_dex_two_address);
-
-        (app, execution_contract, mock_dex_one, mock_dex_two)
+        (app, execution_contract) 
 
     }
 
     mod execution {
+        use std::{str::FromStr, cmp};
+
+        use cosmwasm_std::{Decimal, coin};
+
+        use crate::{state::PairConfiguration, msg::ExecuteMsg};
+
         use super::*;
 
+        struct MockUser {
+            address: Addr,
+            supply: Coin,
+            slippage_tolerance: String,
+        }
+
+        fn generate_random_address() -> Addr {
+            Addr::unchecked(cosmrs::crypto::secp256k1::SigningKey::random()
+                .public_key()
+                .account_id("shogun")
+                .unwrap()
+                .to_string())
+        }
+
         #[test]
-        fn complete() {
-            let (mut app, execution_contract, mock_dex_one, mock_dex_two) = proper_instantiate();
+        fn complete_single_pair() {
+            let astroport_address = generate_random_address();
+            let (mut app, execution_contract) = proper_instantiate(astroport_address);
 
-            // let msg = ExecuteMsg { };
-            // let cosmos_msg = cw_template_contract.call(msg).unwrap();
-            
-            //app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
-        }
-    }
+            let base = "ETH";
+            let quote = "ATOM";
+            let price: u128 = 250_000_000;
 
-    mod mock_dex {
-        use cosmwasm_schema::cw_serde;
-        use cosmwasm_std::{entry_point, Deps, Binary, StdResult, Decimal, WasmMsg, CosmosMsg, to_binary, Addr};
-        use cosmwasm_std::{DepsMut, Env, MessageInfo, Response};
-        use schemars::JsonSchema;
-        use serde::{Deserialize, Serialize};
-        use thiserror::Error;
+            // we use the smallest denomination of each coin, microatom for ATOM and wei for ETH
+            let users: Vec<MockUser> = vec![
+                MockUser { address: generate_random_address(), supply: coin(2_000_000_000_000_000_000, "ETH"), slippage_tolerance: "0.02".to_string() }, // A
+                MockUser { address: generate_random_address(), supply: coin(2_000_000_000_000_000_000, "ETH"), slippage_tolerance: "0.015".to_string() }, // B
+                MockUser { address: generate_random_address(), supply: coin(5_000_000_000_000_000_000, "ETH"), slippage_tolerance: "0.01".to_string() }, // C
+                MockUser { address: generate_random_address(), supply: coin(100_000_000, "ATOM"), slippage_tolerance: "0.015".to_string() }, // D
+                MockUser { address: generate_random_address(), supply: coin(300_000_000, "ATOM"), slippage_tolerance: "0.015".to_string() }, // E
+                MockUser { address: generate_random_address(), supply: coin(450_000_000, "ATOM"), slippage_tolerance: "0.015".to_string() }, // F
+                MockUser { address: generate_random_address(), supply: coin(600_000_000, "ATOM"), slippage_tolerance: "0.01".to_string() }, // G
+            ];
 
-        #[cw_serde]
-        pub struct InstantiateMsg {
-            pub bid_denom: String,
-            pub ask_denom: String,
+            // load user balances into their wallets and calculate total amounts
+            let base_supply: Uint128 = 0u128.into();
+            let quote_supply: Uint128 = 0u128.into();
 
-            pub price: Decimal
-        }
-
-        #[cw_serde]
-        pub enum ExecuteMsg {
-            Swap {
-                offer_denom: String
-            }
-        }
-
-        #[cw_serde]
-        pub enum QueryMsg {}
-
-        #[derive(Error, Debug)]
-        pub enum ContractError {}
-
-        pub fn instantiate(_deps: DepsMut, _env: Env, _info: MessageInfo, _msg: InstantiateMsg) -> Result<Response, ContractError> {
-            unimplemented!()
-        }
-
-        pub fn execute(_deps: DepsMut, _env: Env, _info: MessageInfo, _msg: ExecuteMsg) -> Result<Response, ContractError> {
-            unimplemented!()
-        }
-
-        pub fn query(_deps: Deps, _env: Env, _msg: QueryMsg) -> StdResult<Binary> {
-            unimplemented!()
-        }
-
-        #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
-        pub struct MockDex(pub Addr);
-
-        impl MockDex {
-            pub fn addr(&self) -> Addr {
-                self.0.clone()
+            for user in &users {
+                app.sudo(cw_multi_test::SudoMsg::Bank(
+                    cw_multi_test::BankSudo::Mint { to_address: user.address.to_string(), amount: vec![user.supply.clone()]}
+                ))
+                .unwrap();
             }
 
-            pub fn call<T: Into<ExecuteMsg>>(&self, msg: T) -> StdResult<CosmosMsg> {
-                let msg = to_binary(&msg.into())?;
-                Ok(WasmMsg::Execute {
-                    contract_addr: self.addr().into(),
-                    msg,
-                    funds: vec![],
-                }
-                .into())
+            let pair_config = PairConfiguration {
+                base: "ETH".into(),
+                base_supply,
+                quote: "ATOM".into(),
+                surplus: None,
+                quote_supply,
+                exchange_rate: price,
+            };
+
+            // initialise the batch settelement
+            let prepare_msg = ExecuteMsg::Prepare { assets: vec![pair_config] };
+            let _ = app.execute_contract::<ExecuteMsg>(Addr::unchecked("solver"), execution_contract.addr(), &prepare_msg, &vec![coin(0, "")]); 
+
+            for user in &users {
+                let supply_msg = ExecuteMsg::Supply {
+                    quote: "ETH".into(),
+                    slippage_tolerance: Decimal::from_str(&user.slippage_tolerance).unwrap()
+                };
+                let _ = app.execute_contract::<ExecuteMsg>(user.address.clone().into(), execution_contract.addr(), &supply_msg, &vec![]);
             }
+
+            let settle_msg = ExecuteMsg::Settle{};
+            let resp = app.execute_contract(Addr::unchecked("solver"), execution_contract.addr(), &settle_msg, &vec![]);
         }
-
-
     }
 }
