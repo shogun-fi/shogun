@@ -55,7 +55,7 @@ fn prepare(deps: DepsMut, env: Env, info: MessageInfo, assets: Vec<PairConfigura
             },
 
             Ordering::Less => {
-                let surplus = base_demand - pair.quote.amount;
+                let surplus = (base_demand - pair.base.amount) * pair.exchange_rate;
                 Some(coin(surplus.into(), pair.quote.denom.clone()))
             },
         };
@@ -183,6 +183,7 @@ mod tests {
 
     #[test]
     fn supply() {
+        // TODO: Make automated
         let mut deps = mock_dependencies();
         let owner_info = mock_info("creator", &coins(0, "token"));
         let msg = InstantiateMsg {astroport_address: Addr::unchecked("astroport")};
@@ -192,7 +193,7 @@ mod tests {
             base: coin(500_000, "ETH"), 
             quote: coin(100_000, "ATOM"), 
             surplus: None,
-            exchange_rate: 2u128.into(), 
+            exchange_rate: 3u128.into(), 
         };
 
         let _res = super::prepare(deps.as_mut(), mock_env(), owner_info, vec![pair_configuration]);
@@ -203,7 +204,15 @@ mod tests {
         let info = mock_info("user_2", &coins(300_000, "ETH"));
         let _res = super::deposit(deps.as_mut(), mock_env(), info, "ATOM".to_owned(), Decimal::from_str("0.04").unwrap());
 
-        let info = mock_info("user_3", &coins(100_000, "ATOM"));
+        let info = mock_info("user_3", &coins(40_000, "ATOM"));
         let _res = super::deposit(deps.as_mut(), mock_env(), info, "ETH".to_owned(), Decimal::from_str("0.04").unwrap());
+
+        let info = mock_info("user_4", &coins(30_000, "ATOM"));
+        let _res = super::deposit(deps.as_mut(), mock_env(), info, "ETH".to_owned(), Decimal::from_str("0.04").unwrap());
+
+        let info = mock_info("user_4", &coins(30_000, "ATOM"));
+        let _res = super::deposit(deps.as_mut(), mock_env(), info, "ETH".to_owned(), Decimal::from_str("0.04").unwrap());
+
+        let msgs = SETTLEMENT_MESSAGES.load(&deps.storage).unwrap();
     }
 }
