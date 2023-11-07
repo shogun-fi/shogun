@@ -8,6 +8,8 @@
   packages = [
     pkgs.git
     pkgs.darwin.apple_sdk.frameworks.Security
+
+    pkgs.bun
     pkgs.mktemp
   ];
 
