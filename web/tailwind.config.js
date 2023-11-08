@@ -2,11 +2,16 @@
 export default {
   content: ['./src/**/*.{html,js,svelte,ts}'],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        'sans': ['IBM Plex Sans'],
+        'mono': ['IBM Plex Mono']
+      }
+    },
   },
   plugins: [require("daisyui")],
   daisyui: {
-    themes: ["light", "dark", "cyberpunk"],
+    themes: ["dark"], 
   },
 }
 

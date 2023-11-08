@@ -39,6 +39,9 @@
   },
   "type": "module",
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.0.8",
+    "@fontsource/ibm-plex-sans": "^5.0.17",
+    "@fontsource/ibm-plex-serif": "^5.0.8",
     "@wagmi/core": "^1.4.5",
     "@web3modal/wagmi": "^3.2.0",
     "viem": "^1.18.9"
