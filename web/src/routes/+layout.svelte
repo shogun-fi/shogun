@@ -2,6 +2,7 @@
     import "../app.css"
 
     import { page } from '$app/stores';
+	import ConnectWallet from "$components/ConnectWallet.svelte";
 </script>
 
 <div class="absolute navbar bg-base-100">
@@ -13,9 +14,7 @@
       </ul>
     </div>
     <div class="flex-none">
-      <button class="text-sm font-bold tracking-wider text-accent btn btn-ghost">
-        Connect
-      </button>
+        <ConnectWallet />
     </div>
 </div>
 <slot />

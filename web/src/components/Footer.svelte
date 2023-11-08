@@ -5,11 +5,7 @@
     </aside> 
     <nav>
       <header class="footer-title">App</header> 
-      <a class="link link-hover">Swap</a> 
-    </nav> 
-    <nav>
-      <header class="footer-title">Protocol</header> 
-      <a class="link link-hover">Whitepaper</a> 
+      <a href="/swap" class="link link-hover">Swap</a> 
     </nav> 
     <nav>
       <header class="footer-title">Company</header> 
