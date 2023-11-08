@@ -1,0 +1,8 @@
+[install.lockfile]
+
+# whether to save the lockfile to disk
+save = false
+
+# whether to save a non-Bun lockfile alongside bun.lockb
+# only "yarn" is supported
+# print = "yarn"
