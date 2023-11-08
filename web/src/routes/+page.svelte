@@ -30,16 +30,12 @@
                 <details class="flex-grow dropdown bg-base-300 rounded-box ">
                   <summary class="h-full text-sm font-light btn btn-lg btn-ghost btn-block"><Atom size={20}/>ATOM</summary>
                   <ul class="p-2 shadow menu dropdown-content z-[1] bg-base-100 rounded-box w-52">
-                    <li><a>Item 1</a></li>
-                    <li><a>Item 2</a></li>
                   </ul>
                 </details>
                 <div class="text-xs divider lg:divider-horizontal">TO</div> 
                 <details class="flex-grow dropdown bg-base-300 rounded-box ">
                   <summary class="h-full text-sm font-light btn btn-lg btn-ghost btn-block"><Usdt size={20}/>USDT</summary>
                   <ul class="p-2 shadow menu dropdown-content z-[1] bg-base-100 rounded-box w-52">
-                    <li><a>Item 1</a></li>
-                    <li><a>Item 2</a></li>
                   </ul>
                 </details>
               </div>
