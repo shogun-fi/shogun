@@ -9,17 +9,22 @@
         'neutron-1': {
             display: "Neutron",
             tokens: [
-                'ATOM'
+                'ATOM',
+                'stATOM'
             ]
         },
 
         'osmosis-1': {
             display: "Osmosis",
             tokens: [
-                'ATOM'
+                'ATOM',
+                'stATOM'
             ]
         }
     };
+
+    export let network = "Osmosis"
+    export let token = "ATOM"
 
     function toggleModal() {
         isModalOpen = !isModalOpen;
@@ -32,8 +37,8 @@
     <div class="flex items-center space-x-3">
         <Atom size={24} />
         <div class="space-y-2 text-left">
-            <p>Osmosis</p>
-            <p class="font-extralight">ATOM</p>
+            <p>{network}</p>
+            <p class="font-extralight">{token}</p>
         </div>
     </div>
 </button>

@@ -20,7 +20,8 @@ const config = {
 		}),
 
 		alias: {
-			'$components': './src/components'
+			'$components': './src/components',
+			'$stores': './src/stores'
 		}
 	},
 };

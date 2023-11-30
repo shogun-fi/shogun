@@ -121,7 +121,7 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String, slippa
         if supply.denom == pair.base.denom {
             supply.amount * pair.exchange_rate
         } else {
-            supply.amount / pair.exchange_rate
+            supply.amount.multiply_ratio(supply.amount, pair.exchange_rate)
         }
     };
 
@@ -190,29 +190,29 @@ mod tests {
         let _res = super::instantiate(deps.as_mut(), mock_env(), owner_info.clone(), msg).unwrap();
 
         let pair_configuration = PairConfiguration {
-            base: coin(500_000, "ETH"), 
-            quote: coin(100_000, "ATOM"), 
+            quote: coin(8_000_000, "ATOM"), 
+            base: coin(40_000_000, "STATOM"), 
             surplus: None,
-            exchange_rate: 3u128.into(), 
+            exchange_rate: 1_214_386u128.into(), 
         };
+
 
         let _res = super::prepare(deps.as_mut(), mock_env(), owner_info, vec![pair_configuration]);
 
-        let info = mock_info("user_1", &coins(200_000, "ETH"));
+        let info = mock_info("user_1", &coins(4_000_000, "ATOM"));
+        let _res = super::deposit(deps.as_mut(), mock_env(), info, "STATOM".to_owned(), Decimal::from_str("0.04").unwrap());
+
+        let info = mock_info("user_2", &coins(4_000_000, "ATOM"));
+        let _res = super::deposit(deps.as_mut(), mock_env(), info, "STATOM".to_owned(), Decimal::from_str("0.04").unwrap());
+
+        let info = mock_info("user_3", &coins(20_000_000, "STATOM"));
         let _res = super::deposit(deps.as_mut(), mock_env(), info, "ATOM".to_owned(), Decimal::from_str("0.04").unwrap());
 
-        let info = mock_info("user_2", &coins(300_000, "ETH"));
+        let info = mock_info("user_4", &coins(20_000_000, "STATOM"));
         let _res = super::deposit(deps.as_mut(), mock_env(), info, "ATOM".to_owned(), Decimal::from_str("0.04").unwrap());
-
-        let info = mock_info("user_3", &coins(40_000, "ATOM"));
-        let _res = super::deposit(deps.as_mut(), mock_env(), info, "ETH".to_owned(), Decimal::from_str("0.04").unwrap());
-
-        let info = mock_info("user_4", &coins(30_000, "ATOM"));
-        let _res = super::deposit(deps.as_mut(), mock_env(), info, "ETH".to_owned(), Decimal::from_str("0.04").unwrap());
-
-        let info = mock_info("user_4", &coins(30_000, "ATOM"));
-        let _res = super::deposit(deps.as_mut(), mock_env(), info, "ETH".to_owned(), Decimal::from_str("0.04").unwrap());
 
         let msgs = SETTLEMENT_MESSAGES.load(&deps.storage).unwrap();
+
+        println!("{:#?}", msgs)
     }
 }
