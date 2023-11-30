@@ -44,16 +44,18 @@ pub fn execute(
 fn prepare(deps: DepsMut, env: Env, info: MessageInfo, assets: Vec<PairConfiguration>) ->Result<Response, ContractError> {
 
     for mut pair in assets {
-        let base_demand = pair.quote.amount / pair.exchange_rate;
+        let base_demand = pair.quote.amount.div_floor((Uint128::from(1_000_000u128), pair.exchange_rate));
 
         pair.surplus = match pair.base.amount.cmp(&base_demand) {
             Ordering::Equal => None,
 
+            // Surplus in base
             Ordering::Greater => {
                 let surplus = pair.base.amount - base_demand;
                 Some(coin(surplus.into(), pair.base.denom.clone()))
             },
 
+            // Surplus in quote
             Ordering::Less => {
                 let surplus = (base_demand - pair.base.amount) * pair.exchange_rate;
                 Some(coin(surplus.into(), pair.quote.denom.clone()))
@@ -90,12 +92,14 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String, slippa
 
     let mut settlement_messages: Vec<CosmosMsg> = Vec::new();
 
-    if let (Some(surplus), true) = (pair.surplus.clone(), pair.surplus.is_some_and(|surplus| surplus.denom == supply.denom)) { 
+    let mut cow_matched: Uint128 = 0u128.into();
+
+    if let (Some(surplus), true) = (pair.surplus.clone(), pair.surplus.clone().is_some_and(|surplus| surplus.denom == supply.denom)) { 
         let user_residual = {
             if supply.denom == pair.base.denom {
-                supply.amount.multiply_ratio(surplus.amount, pair.base.amount)
+                surplus.amount.multiply_ratio(supply.amount, pair.base.amount)
             } else {
-                supply.amount.multiply_ratio(surplus.amount, pair.quote.amount)
+                surplus.amount.multiply_ratio(supply.amount, pair.quote.amount)
             }
         };
 
@@ -114,16 +118,29 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String, slippa
             funds: coins(user_residual.into(), supply.denom.clone())
         }.into());
 
-        supply.amount -= user_residual;
-    }
-    
-    let cow_matched = {
-        if supply.denom == pair.base.denom {
-            supply.amount * pair.exchange_rate
-        } else {
-            supply.amount / pair.exchange_rate
+        cow_matched = {
+            if supply.denom == pair.base.denom {
+                pair.quote.amount.multiply_ratio(supply.amount, pair.base.amount)
+            } else {
+                pair.base.amount.multiply_ratio(supply.amount, pair.quote.amount)
+            }
+        };
+    } else {
+        let s = pair.surplus.unwrap();
+
+        let mut total_to_be_cowed: Uint128 = 0u128.into();
+        if s.denom == pair.base.denom {
+            total_to_be_cowed = (pair.base.amount - s.amount).into()
+        } else if s.denom == pair.quote.denom {
+            total_to_be_cowed = (pair.quote.amount - s.amount).into()
         }
-    };
+
+        if supply.denom == pair.base.denom {
+            cow_matched = total_to_be_cowed.multiply_ratio(supply.amount, pair.base.amount)
+        } else {
+            cow_matched = total_to_be_cowed.multiply_ratio(supply.amount, pair.quote.amount)
+        }
+    } 
 
     settlement_messages.push(BankMsg::Send {
         to_address: user_address.clone().into(),
@@ -190,25 +207,25 @@ mod tests {
         let _res = super::instantiate(deps.as_mut(), mock_env(), owner_info.clone(), msg).unwrap();
 
         let pair_configuration = PairConfiguration {
-            quote: coin(8_000_000, "ATOM"), 
-            base: coin(40_000_000, "STATOM"), 
+            quote: coin(4_000_000, "ATOM"), 
+            base: coin(6_000_000, "STATOM"), 
             surplus: None,
-            exchange_rate: 1_214_386u128.into(), 
+            exchange_rate: 800_000u128.into(), 
         };
 
 
         let _res = super::prepare(deps.as_mut(), mock_env(), owner_info, vec![pair_configuration]);
 
-        let info = mock_info("user_1", &coins(4_000_000, "ATOM"));
+        let info = mock_info("user_1", &coins(1_000_000, "ATOM"));
         let _res = super::deposit(deps.as_mut(), mock_env(), info, "STATOM".to_owned(), Decimal::from_str("0.04").unwrap());
 
-        let info = mock_info("user_2", &coins(4_000_000, "ATOM"));
+        let info = mock_info("user_2", &coins(3_000_000, "ATOM"));
         let _res = super::deposit(deps.as_mut(), mock_env(), info, "STATOM".to_owned(), Decimal::from_str("0.04").unwrap());
 
-        let info = mock_info("user_3", &coins(20_000_000, "STATOM"));
+        let info = mock_info("user_3", &coins(2_000_000, "STATOM"));
         let _res = super::deposit(deps.as_mut(), mock_env(), info, "ATOM".to_owned(), Decimal::from_str("0.04").unwrap());
 
-        let info = mock_info("user_4", &coins(20_000_000, "STATOM"));
+        let info = mock_info("user_4", &coins(4_000_000, "STATOM"));
         let _res = super::deposit(deps.as_mut(), mock_env(), info, "ATOM".to_owned(), Decimal::from_str("0.04").unwrap());
 
         let msgs = SETTLEMENT_MESSAGES.load(&deps.storage).unwrap();
