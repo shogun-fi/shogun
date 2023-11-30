@@ -121,7 +121,7 @@ fn deposit(deps: DepsMut, env: Env, info: MessageInfo, buy_denom: String, slippa
         if supply.denom == pair.base.denom {
             supply.amount * pair.exchange_rate
         } else {
-            supply.amount.multiply_ratio(supply.amount, pair.exchange_rate)
+            supply.amount / pair.exchange_rate
         }
     };
 
